@@ -151,7 +151,8 @@
 
 #define g_mode_rates_size (12)
 #define a_mode_rates_size (8)
-
+#define DRIVER_DISCONNECT_REASON_INDEX \
+	QCA_NL80211_VENDOR_SUBCMD_DRIVER_DISCONNECT_REASON_INDEX
 /**
  * rtt_is_initiator - Macro to check if the bitmap has any RTT roles set
  * @bitmap: The bitmap to be checked
@@ -1604,6 +1605,10 @@ static const struct nl80211_vendor_cmd_info wlan_hdd_cfg80211_vendor_events[] = 
 	[QCA_NL80211_VENDOR_SUBCMD_UPDATE_STA_INFO_INDEX] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_UPDATE_STA_INFO,
+	},
+	[QCA_NL80211_VENDOR_SUBCMD_DRIVER_DISCONNECT_REASON_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd = QCA_NL80211_VENDOR_SUBCMD_DRIVER_DISCONNECT_REASON,
 	},
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
 	[QCA_NL80211_VENDOR_SUBCMD_ROAM_EVENTS_INDEX] = {
@@ -5308,13 +5313,17 @@ static int __wlan_hdd_cfg80211_disable_dfs_chan_scan(struct wiphy *wiphy,
 						     const void *data,
 						     int data_len)
 {
+#ifdef WLAN_DEBUG
 	struct net_device *dev = wdev->netdev;
+#endif
 	struct hdd_context *hdd_ctx  = wiphy_priv(wiphy);
 	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_SET_NO_DFS_FLAG_MAX + 1];
 	int ret_val;
 	uint32_t no_dfs_flag = 0;
 	bool enable_dfs_scan = true;
+#ifdef WLAN_DEBUG
 	hdd_enter_dev(dev);
+#endif
 
 	ret_val = wlan_hdd_validate_context(hdd_ctx);
 	if (ret_val)
@@ -20481,6 +20490,9 @@ wlan_hdd_cfg80211_indicate_disconnect(struct hdd_adapter *adapter,
 				      uint16_t disconnect_ies_len)
 {
 	enum ieee80211_reasoncode ieee80211_reason;
+	struct sk_buff *vendor_event;
+	int flags;
+	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
 
 	ieee80211_reason = wlan_hdd_get_cfg80211_disconnect_reason(adapter,
 								   reason);
@@ -20490,6 +20502,26 @@ wlan_hdd_cfg80211_indicate_disconnect(struct hdd_adapter *adapter,
 		      adapter->last_disconnect_reason,
 		      hdd_qca_reason_to_str(adapter->last_disconnect_reason),
 		      locally_generated);
+
+	flags = cds_get_gfp_flags();
+	vendor_event =
+		cfg80211_vendor_event_alloc(
+			hdd_ctx->wiphy, &(adapter->wdev), NLMSG_HDRLEN +
+			sizeof(adapter->last_disconnect_reason) +
+			NLMSG_HDRLEN, DRIVER_DISCONNECT_REASON_INDEX, flags);
+	if (!vendor_event) {
+		hdd_err("cfg80211_vendor_event_alloc failed");
+		return;
+	}
+
+	if (nla_put_u32(vendor_event, DISCONNECT_REASON,
+			adapter->last_disconnect_reason)) {
+		hdd_err("DISCONNECT_REASON put fail");
+		kfree_skb(vendor_event);
+		goto send_disconnect;
+	}
+	cfg80211_vendor_event(vendor_event, flags);
+send_disconnect:
 	cfg80211_disconnected(adapter->dev, ieee80211_reason, disconnect_ies,
 			      disconnect_ies_len, locally_generated,
 			      GFP_KERNEL);
@@ -20652,9 +20684,11 @@ static int __wlan_hdd_cfg80211_disconnect(struct wiphy *wiphy,
 					  false, true, vdev);
 		hdd_objmgr_put_vdev(vdev);
 
+#ifdef WLAN_DEBUG
 		hdd_nofl_info("%s(vdevid-%d): Received Disconnect reason:%d %s",
 			      dev->name, adapter->vdev_id, reason,
 			      hdd_ieee80211_reason_code_to_str(reason));
+#endif
 		status = wlan_hdd_disconnect(adapter, reasonCode, reason);
 		if (0 != status) {
 			hdd_err("wlan_hdd_disconnect failed, status: %d", status);
@@ -23200,9 +23234,9 @@ static void hdd_update_chan_info(struct hdd_context *hdd_ctx,
 			struct scan_chan_info *chan,
 			struct scan_chan_info *info, uint32_t cmd_flag)
 {
-	if ((info->cmd_flag != WMI_CHAN_InFO_START_RESP) &&
+	/*if ((info->cmd_flag != WMI_CHAN_InFO_START_RESP) &&
 	   (info->cmd_flag != WMI_CHAN_InFO_END_RESP))
-		hdd_err("cmd flag is invalid: %d", info->cmd_flag);
+		hdd_err("cmd flag is invalid: %d", info->cmd_flag);*/
 
 	mutex_lock(&hdd_ctx->chan_info_lock);
 

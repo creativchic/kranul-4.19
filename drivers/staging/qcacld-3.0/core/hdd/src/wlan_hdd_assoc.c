@@ -2049,12 +2049,10 @@ QDF_STATUS hdd_roam_register_sta(struct hdd_adapter *adapter,
 {
 	QDF_STATUS qdf_status = QDF_STATUS_E_FAILURE;
 	struct ol_txrx_desc_type txrx_desc = { 0 };
+	struct hdd_station_ctx *sta_ctx __maybe_unused = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
 	struct ol_txrx_ops txrx_ops;
 	void *soc = cds_get_context(QDF_MODULE_ID_SOC);
 	void *pdev = cds_get_context(QDF_MODULE_ID_TXRX);
-#ifdef WLAN_DEBUG
-	struct hdd_station_ctx *sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
-#endif
 
 	if (!bss_desc)
 		return QDF_STATUS_E_FAILURE;
@@ -3005,7 +3003,9 @@ hdd_association_completion_handler(struct hdd_adapter *adapter,
 				(u8 *) (roam_info->pbFrames +
 					roam_info->nBeaconLength +
 					roam_info->nAssocReqLength);
-			if (assoc_rsp) {
+			if (assoc_rsp &&
+			    roam_info->nAssocRspLength >
+			    FT_ASSOC_RSP_IES_OFFSET) {
 				/*
 				 * assoc_rsp needs to point to the IEs
 				 */
@@ -3024,7 +3024,9 @@ hdd_association_completion_handler(struct hdd_adapter *adapter,
 			assoc_req = (u8 *) (roam_info->pbFrames +
 					      roam_info->nBeaconLength);
 			if (assoc_req) {
-				if (!ft_carrier_on) {
+				if (!ft_carrier_on &&
+				    roam_info->nAssocReqLength >
+				    FT_ASSOC_REQ_IES_OFFSET) {
 					/*
 					 * assoc_req needs to point to
 					 * the IEs

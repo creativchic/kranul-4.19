@@ -4067,8 +4067,8 @@ QDF_STATUS csr_roam_prepare_bss_config(struct mac_context *mac,
 	if (((pBssConfig->uCfgDot11Mode == eCSR_CFG_DOT11_MODE_11N)
 	    || (pBssConfig->uCfgDot11Mode == eCSR_CFG_DOT11_MODE_11AC))
 		&& ((pBssConfig->qosType != eCSR_MEDIUM_ACCESS_WMM_eDCF_DSCP)
-		    || (pBssConfig->qosType != eCSR_MEDIUM_ACCESS_11e_HCF)
-		    || (pBssConfig->qosType != eCSR_MEDIUM_ACCESS_11e_eDCF))) {
+		    && (pBssConfig->qosType != eCSR_MEDIUM_ACCESS_11e_HCF)
+		    && (pBssConfig->qosType != eCSR_MEDIUM_ACCESS_11e_eDCF))) {
 		/* Joining BSS is 11n capable and WMM is disabled on AP. */
 		/* Assume all HT AP's are QOS AP's and enable WMM */
 		pBssConfig->qosType = eCSR_MEDIUM_ACCESS_WMM_eDCF_DSCP;
@@ -12056,6 +12056,10 @@ csr_roam_chk_lnk_assoc_ind(struct mac_context *mac_ctx, tSirSmeRsp *msg_ptr)
 					eCSR_ROAM_RESULT_INFRA_ASSOCIATION_IND);
 		if (!QDF_IS_STATUS_SUCCESS(status)) {
 			/* Refused due to Mac filtering */
+			if (roam_info->owe_pending_assoc_ind) {
+				qdf_mem_free(roam_info->owe_pending_assoc_ind);
+				roam_info->owe_pending_assoc_ind = NULL;
+			}
 			roam_info->status_code = eSIR_SME_ASSOC_REFUSED;
 		} else if (pAssocInd->rsnIE.length && WLAN_ELEMID_RSN ==
 			   pAssocInd->rsnIE.rsnIEdata[0]) {
@@ -13616,6 +13620,7 @@ static QDF_STATUS csr_roam_start_wait_for_key_timer(
 QDF_STATUS csr_roam_stop_wait_for_key_timer(struct mac_context *mac)
 {
 	uint8_t vdev_id = mac->roam.WaitForKeyTimerInfo.vdev_id;
+#ifdef WLAN_DEBUG
 	tpCsrNeighborRoamControlInfo pNeighborRoamInfo =
 		&mac->roam.neighborRoamInfo[vdev_id];
 
@@ -13624,6 +13629,7 @@ QDF_STATUS csr_roam_stop_wait_for_key_timer(struct mac_context *mac)
 						   neighborRoamState),
 		mac_trace_getcsr_roam_sub_state(mac->roam.
 						curSubState[vdev_id]));
+#endif
 	if (csr_neighbor_roam_is_handoff_in_progress(mac, vdev_id)) {
 		/*
 		 * Enable heartbeat timer when hand-off is in progress

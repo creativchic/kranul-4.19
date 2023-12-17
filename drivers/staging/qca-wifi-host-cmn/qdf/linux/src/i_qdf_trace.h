@@ -102,8 +102,19 @@
 		} \
 	} while (0)
 #else
-#define __QDF_TRACE_RATE_LIMITED(arg ...)
-#define __QDF_TRACE_HEX_DUMP_RATE_LIMITED(arg ...)
+static inline void __printf(3, 4) no_qdf_trace_msg(QDF_MODULE_ID module, QDF_TRACE_LEVEL level,
+		   char *str_format, ...)
+{
+}
+static inline void no_qdf_trace_hex_dump(QDF_MODULE_ID module, QDF_TRACE_LEVEL level,
+			void *data, int buf_len)
+{
+}
+#define QDF_TRACE_RATE_LIMITED(rate, module, level, format, ...) \
+	no_qdf_trace_msg(module, level, format, ##__VA_ARGS__)
+
+#define QDF_TRACE_HEX_DUMP_RATE_LIMITED(rate, module, level, format, ...) \
+	no_qdf_trace_hex_dump(module, level, format, ##__VA_ARGS__)
 #endif
 
 #define __QDF_TRACE_NO_FL(log_level, module_id, format, args...) \
@@ -263,6 +274,40 @@ static inline void __qdf_trace_hexdump_dummy(QDF_MODULE_ID module,
 		} \
 	} while (0)
 #endif /* WLAN_WARN_ON_ASSERT */
+
+/**
+ * qdf_trace_msg()- logging API
+ * @module: Module identifier. A member of the QDF_MODULE_ID enumeration that
+ *	    identifies the module issuing the trace message.
+ * @level: Trace level. A member of the QDF_TRACE_LEVEL enumeration indicating
+ *	   the severity of the condition causing the trace message to be issued.
+ *	   More severe conditions are more likely to be logged.
+ * @str_format: Format string. The message to be logged. This format string
+ *	       contains printf-like replacement parameters, which follow this
+ *	       parameter in the variable argument list.
+ *
+ * Users wishing to add tracing information to their code should use
+ * QDF_TRACE.  QDF_TRACE() will compile into a call to qdf_trace_msg() when
+ * tracing is enabled.
+ *
+ * Return: nothing
+ *
+ * implemented in qdf_trace.c
+ */
+void __printf(3, 4) qdf_trace_msg(QDF_MODULE_ID module, QDF_TRACE_LEVEL level,
+				  const char *str_format, ...);
+
+/**
+ * qdf_vtrace_msg() - the va_list version of qdf_trace_msg
+ * @module: the calling module's Id
+ * @level: the logging level to log using
+ * @str_format: the log format string
+ * @val: the va_list containing the values to format according to str_format
+ *
+ * Return: None
+ */
+void qdf_vtrace_msg(QDF_MODULE_ID module, QDF_TRACE_LEVEL level,
+		    const char *str_format, va_list val);
 
 #else
 

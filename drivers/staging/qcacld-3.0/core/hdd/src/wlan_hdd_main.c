@@ -211,7 +211,6 @@ static unsigned int dev_num = 1;
 static struct cdev wlan_hdd_state_cdev;
 static struct class *class;
 static dev_t device;
-static bool hdd_loaded = false;
 
 /* the Android framework expects this param even though we don't use it */
 #define BUF_LEN 20
@@ -1475,6 +1474,8 @@ static void hdd_update_tgt_services(struct hdd_context *hdd_ctx,
 	hdd_update_tdls_config(hdd_ctx);
 	sme_update_tgt_services(hdd_ctx->mac_handle, cfg);
 	hdd_ctx->roam_ch_from_fw_supported = cfg->is_roam_scan_ch_to_host;
+	hdd_ctx->ll_stats_per_chan_rx_tx_time =
+					cfg->ll_stats_per_chan_rx_tx_time;
 }
 
 /**
@@ -6300,11 +6301,9 @@ QDF_STATUS hdd_stop_adapter(struct hdd_context *hdd_ctx,
 
 		hdd_deregister_tx_flow_control(adapter);
 
-#ifdef WLAN_OPEN_SOURCE
 		cancel_work_sync(&adapter->ipv4_notifier_work);
 #ifdef WLAN_NS_OFFLOAD
 		cancel_work_sync(&adapter->ipv6_notifier_work);
-#endif
 #endif
 
 		if (adapter->device_mode == QDF_STA_MODE) {
@@ -6483,11 +6482,9 @@ QDF_STATUS hdd_stop_adapter(struct hdd_context *hdd_ctx,
 			hdd_objmgr_put_vdev(vdev);
 		}
 
-#ifdef WLAN_OPEN_SOURCE
 		cancel_work_sync(&adapter->ipv4_notifier_work);
 #ifdef WLAN_NS_OFFLOAD
 		cancel_work_sync(&adapter->ipv6_notifier_work);
-#endif
 #endif
 		if (adapter->device_mode == QDF_SAP_MODE) {
 			ucfg_ipa_flush_pending_vdev_events(hdd_ctx->pdev,
@@ -6725,6 +6722,13 @@ QDF_STATUS hdd_reset_all_adapters(struct hdd_context *hdd_ctx)
 			hdd_set_disconnect_status(adapter, false);
 
 		hdd_stop_tsf_sync(adapter);
+
+		if (wlan_hdd_is_session_type_monitor(adapter->device_mode) &&
+			adapter->vdev) {
+			ucfg_pkt_capture_deregister_callbacks(adapter->vdev);
+			hdd_objmgr_put_vdev(adapter->vdev);
+			adapter->vdev = NULL;
+		}
 
 		hdd_softap_deinit_tx_rx(adapter);
 		hdd_deregister_hl_netdev_fc_timer(adapter);
@@ -9090,6 +9094,7 @@ void hdd_bus_bandwidth_deinit(struct hdd_context *hdd_ctx)
 }
 #endif /*WLAN_FEATURE_DP_BUS_BANDWIDTH*/
 
+#ifdef WLAN_DEBUG
 static uint8_t *convert_level_to_string(uint32_t level)
 {
 	switch (level) {
@@ -9106,6 +9111,7 @@ static uint8_t *convert_level_to_string(uint32_t level)
 		return "INVAL";
 	}
 }
+#endif
 
 
 /**
@@ -9116,6 +9122,7 @@ static uint8_t *convert_level_to_string(uint32_t level)
  */
 void wlan_hdd_display_tx_rx_histogram(struct hdd_context *hdd_ctx)
 {
+#ifdef WLAN_DEBUG
 	int i;
 
 #ifdef WLAN_FEATURE_DP_BUS_BANDWIDTH
@@ -9161,6 +9168,7 @@ void wlan_hdd_display_tx_rx_histogram(struct hdd_context *hdd_ctx)
 				hdd_ctx->hdd_txrx_hist[i].tx_pm_qos_high ?
 				"HIGH" : "LOW");
 	}
+#endif
 }
 
 /**
@@ -14156,8 +14164,6 @@ static int wlan_hdd_state_ctrl_param_open(struct inode *inode,
 	return 0;
 }
 
-static int hdd_driver_load(void);
-
 static void __hdd_inform_wifi_off(void)
 {
 	struct hdd_context *hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
@@ -14195,7 +14201,6 @@ void hdd_init_start_completion(void)
 	INIT_COMPLETION(wlan_start_comp);
 }
 
-static int hdd_driver_load(void);
 static ssize_t wlan_hdd_state_ctrl_param_write(struct file *filp,
 						const char __user *user_buf,
 						size_t count,
@@ -14225,13 +14230,6 @@ static ssize_t wlan_hdd_state_ctrl_param_write(struct file *filp,
 	if (strncmp(buf, wlan_on_str, strlen(wlan_on_str)) != 0) {
 		pr_err("Invalid value received from framework");
 		goto exit;
-	}
-
-	if (!hdd_loaded) {
-		if (hdd_driver_load()) {
-			pr_err("%s: Failed to init hdd module\n", __func__);
-			goto exit;
-		}
 	}
 
 	if (!cds_is_driver_loaded() || cds_is_driver_recovering()) {
@@ -15078,10 +15076,16 @@ static int hdd_driver_load(void)
 
 	hdd_set_conparam(con_mode);
 
+	errno = wlan_hdd_state_ctrl_param_create();
+	if (errno) {
+		hdd_err("Failed to create ctrl param; errno:%d", errno);
+		goto wakelock_destroy;
+	}
+
 	errno = pld_init();
 	if (errno) {
 		hdd_err("Failed to init PLD; errno:%d", errno);
-		goto wakelock_destroy;
+		goto param_destroy;
 	}
 
 	hdd_driver_mode_change_register();
@@ -15096,7 +15100,6 @@ static int hdd_driver_load(void)
 		goto pld_deinit;
 	}
 
-	hdd_loaded = true;
 	hdd_debug("%s: driver loaded", WLAN_MODULE_NAME);
 
 	return 0;
@@ -15115,6 +15118,8 @@ pld_deinit:
 	/* Wait for any ref taken on /dev/wlan to be released */
 	while (qdf_atomic_read(&wlan_hdd_state_fops_ref))
 		;
+param_destroy:
+	wlan_hdd_state_ctrl_param_destroy();
 wakelock_destroy:
 	qdf_wake_lock_destroy(&wlan_wake_lock);
 comp_deinit:
@@ -15229,13 +15234,10 @@ static void hdd_driver_unload(void)
  */
 static int hdd_module_init(void)
 {
-	int ret;
+	if (hdd_driver_load())
+		return -EINVAL;
 
-	ret = wlan_hdd_state_ctrl_param_create();
-	if (ret)
-		pr_err("wlan_hdd_state_create:%x\n", ret);
-
-	return ret;
+	return 0;
 }
 
 /**
