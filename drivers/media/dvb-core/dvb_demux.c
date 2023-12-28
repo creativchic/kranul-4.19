@@ -529,7 +529,6 @@ static inline int dvb_dmx_swfilter_payload(struct dvb_demux_feed *feed,
 	p = 188 - count;
 
 	cc = buf[3] & 0x0f;
-<<<<<<< HEAD
 	if (feed->first_cc)
 		ccok = 1;
 	else
@@ -546,13 +545,6 @@ static inline int dvb_dmx_swfilter_payload(struct dvb_demux_feed *feed,
 		feed->pes_tei_counter = 0;
 		feed->pes_cont_err_counter = 0;
 		feed->pes_ts_packets_num = 0;
-=======
-	ccok = ((feed->cc + 1) & 0x0f) == cc;
-	if (!ccok) {
-		set_buf_flags(feed, DMX_BUFFER_FLAG_DISCONTINUITY_DETECTED);
-		dprintk_sect_loss("missed packet: %d instead of %d!\n",
-				  cc, (feed->cc + 1) & 0x0f);
->>>>>>> cc0ec744da888d59eafc2c0566ae0446e5fb8253
 	}
 	feed->cc = cc;
 
@@ -770,7 +762,6 @@ static int dvb_dmx_swfilter_section_one_packet(struct dvb_demux_feed *feed,
 	p = 188 - count;	/* payload start */
 
 	cc = buf[3] & 0x0f;
-<<<<<<< HEAD
 	if (feed->first_cc)
 		ccok = 1;
 	else
@@ -782,9 +773,6 @@ static int dvb_dmx_swfilter_section_one_packet(struct dvb_demux_feed *feed,
 
 	feed->first_cc = 0;
 	feed->cc = cc;
-=======
-	ccok = ((feed->cc + 1) & 0x0f) == cc;
->>>>>>> cc0ec744da888d59eafc2c0566ae0446e5fb8253
 
 	if (buf[3] & 0x20) {
 		/* adaption field present, check for discontinuity_indicator */
